@@ -13,6 +13,8 @@ import jline.console.history.MemoryHistory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.List;
 
 import static com.googlecode.totallylazy.Callables.compose;
@@ -38,8 +40,9 @@ public class Main {
     private static JavaREPLClient client;
 
     public static void main(String... args) throws Exception {
+        boolean dumb = dumbTerminal(args);
         client = createClient(args);
-        ExpressionReader expressionReader = new ExpressionReader(jlineConsole(client));
+        ExpressionReader expressionReader = new ExpressionReader(dumb ? dumbConsole(client) : jlineConsole(client));
 
         String expression = null;
         Option<EvaluationResult> result = none();
@@ -49,7 +52,7 @@ public class Main {
             if (expression != null) {
                 result = client.execute(expression);
                 if (!result.isEmpty())
-                    printResult(result.get());
+                    printResult(result.get(), dumb);
             }
 
 
@@ -137,24 +140,44 @@ public class Main {
         return sequence(args).find(startsWith("--hostname=")).map(replaceAll("--hostname=", ""));
     }
 
-    private static void printResult(EvaluationResult result) {
+    private static boolean dumbTerminal(String[] args) {
+        for (String arg : args) {
+            if (arg.equals("-d") || arg.equals("--dumb-terminal")) return true;
+        }
+        return false;
+    }
+
+    private static void printResult(EvaluationResult result, boolean dumb) {
         for (EvaluationLog log : result.logs()) {
-            printEvaluationLog(log);
+            printEvaluationLog(log, dumb);
         }
     }
 
-    public static final void printEvaluationLog(EvaluationLog log) {
+    public static final void printEvaluationLog(EvaluationLog log, boolean dumb) {
         switch (log.type()) {
             case INFO:
-                System.out.println("\u001B[0m" + log.message() + "\u001B[0m");
+                System.out.println((dumb ? "" : "\u001B[0m") + log.message() + (dumb ? "" : "\u001B[0m"));
                 break;
             case SUCCESS:
-                System.out.println("\u001B[32m" + log.message() + "\u001B[0m");
+                System.out.println((dumb ? "" : "\u001B[32m") + log.message() + (dumb ? "" : "\u001B[0m"));
                 break;
             case ERROR:
-                System.err.println("\u001B[31m" + log.message() + "\u001B[0m");
+                System.err.println((dumb ? "" : "\u001B[31m") + log.message() + (dumb ? "" : "\u001B[0m"));
                 break;
         }
+    }
+
+    private static Mapper<Sequence<String>, String> dumbConsole(final JavaREPLClient client) throws IOException {
+        return new Mapper<Sequence<String>, String>() {
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+
+            public String call(Sequence<String> lines) throws Exception {
+                System.out.print(lines.isEmpty() ? "java> " : "    | ");
+                return reader.readLine();
+            }
+
+        };
     }
 
     private static Mapper<Sequence<String>, String> jlineConsole(final JavaREPLClient client) throws IOException {
